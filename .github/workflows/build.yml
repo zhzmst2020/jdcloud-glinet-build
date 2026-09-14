@@ -1,0 +1,89 @@
+name: Build Magic GL.iNet 4.x Firmware for JDCloud-1
+
+on:
+  repository_dispatch:
+  workflow_dispatch:
+    inputs:
+      ssh:
+        description: 'SSH connection to Actions'
+        required: false
+        default: 'false'
+
+env:
+  # ⚠️ 请注意：原脚本中的 REPO_URL 只是 github.com 主站，请务必在下方换成你真正要克隆的 OpenWrt 源码仓库地址！
+  # 例如：https://github.com 或其他具体的作者仓库
+  REPO_URL: https://github.com
+  REPO_BRANCH: main
+  CONFIG_FILE: .config
+  DIY_SH: diy.sh
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Initialization environment
+      env:
+        DEBIAN_FRONTEND: noninteractive
+      run: |
+        sudo rm -rf /etc/apt/sources.list.d/* /usr/share/dotnet /usr/local/lib/android /opt/ghc
+        sudo -E apt-get -qq update
+        
+        # 修复：剔除失效的远程脚本，改为老老实实安装官方标准编译依赖，并安装并切换至 gcc-9 以兼容老源码
+        sudo -E apt-get -qq install -y build-essential clang flex bison g++ gawk gcc-multilib g++-multilib gettext git libncurses5-dev libssl-dev patch unzip zlib1g-dev gcc-9 g++-9
+        sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-9 100 --slave /usr/bin/g++ g++ /usr/bin/g++-9
+        
+        sudo -E apt-get -qq autoremove --purge
+        sudo -E apt-get -qq clean
+        sudo timedatectl set-timezone "Asia/Shanghai"
+
+    - name: Clone source code
+      run: |
+        git clone -b $REPO_BRANCH $REPO_URL openwrt
+        cd openwrt
+        # 如果你的源码仓库根目录下没有 setup.py，请在下方这行开头加 # 号注释掉它
+        python3 setup.py -m mt7621 || true
+
+    - name: 魔改硬件引脚和设备树 (DTS)
+      run: |
+        cd openwrt/openwrt-21.02/target/linux/ramips/dts/
+        # 注意：原脚本第一句是自己替换成自己（14换成14），如不需要可自行删改
+        sed -i 's/gpios = <&gpio0 14/gpios = <&gpio0 14/g' mt7621_glinet_gl-mt1300.dts
+        sed -i 's/phy-handle = <&ethphy0>/phy-handle = <&ethphy4>/g' mt7621_glinet_gl-mt1300.dts
+
+    - name: 注入固件减肥配方 (精简体积至 32MB 内)
+      run: |
+        cd openwrt/openwrt-21.02
+        # 先生成默认配置基准
+        make defconfig
+        # 追加你个性化的精简与保留配置
+        echo "CONFIG_PACKAGE_gl-cloud-component=n" >> .config
+        echo "CONFIG_PACKAGE_luci-app-sqm=n" >> .config
+        echo "CONFIG_PACKAGE_luci-app-openvpn=n" >> .config
+        echo "CONFIG_PACKAGE_luci-app-wireguard=y" >> .config
+        echo "CONFIG_PACKAGE_luci-i18n-base-zh-cn=y" >> .config
+        echo "CONFIG_TARGET_ramips_mt7621_DEVICE_glinet_gl-mt1300=y" >> .config
+        # 再次刷新配置以确保依赖合法性
+        make defconfig
+
+    - name: Download package
+      run: |
+        cd openwrt/openwrt-21.02
+        make download -j8
+        find dl -size -1024c -exec ls -l {} \;
+        find dl -size -1024c -exec rm -f {} \;
+
+    - name: Compile the firmware
+      run: |
+        cd openwrt/openwrt-21.02
+        echo -e "$(nproc) thread compile"
+        make -j$(nproc) || make -j1 || make -j1 V=s
+
+    - name: Upload firmware to Artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: JDCloud-1-GLiNet-4.x-Firmware
+        path: openwrt/openwrt-21.02/bin/targets/ramips/mt7621/*sysupgrade.bin
