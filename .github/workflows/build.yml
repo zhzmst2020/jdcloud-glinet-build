@@ -12,11 +12,11 @@ on:
 env:
   # ⚠️ 请注意：原脚本中的 REPO_URL 只是 github.com 主站，请务必在下方换成你真正要克隆的 OpenWrt 源码仓库地址！
   # 例如：https://github.com 或其他具体的作者仓库
-  REPO_URL: https://github.com/gl-inet/gl-infra-builder.git
-  REPO_BRANCH: main
+   REPO_URL: https://github.com/gl-inet/gl-infra-builder.git
+   REPO_BRANCH: main
 
-  CONFIG_FILE: ''
-  DIY_SH: ''
+   CONFIG_FILE: ''
+   DIY_SH: ''
 
 jobs:
   build:
