@@ -10,8 +10,11 @@ on:
         default: 'false'
 
 env:
-  REPO_URL: https://github.com
+  # 注意：如果是官方的分支 REPO_URL 请从 github.com 克隆，或者是你Fork或由第三方魔改的源码时请写其克隆URL
+  # 例如：https://github.com 或者填其他的作者仓库
+  REPO_URL: https://github.comgl-inet/gl-infra-builder.git
   REPO_BRANCH: main
+  CONFIG_FILE: .config
   DIY_SH: diy.sh
 
 jobs:
@@ -26,9 +29,13 @@ jobs:
         env:
           DEBIAN_FRONTEND: noninteractive
         run: |
-          sudo rm -rf /etc/apt/sources.list.d/* /usr/share/dotnet /usr/local/lib/android /opt/ghc
+          sudo rm -rf /etc/apt/sources.list.d/* /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/share/powershell /usr/share/swift /usr/local/.ghcup /var/lib/apt/lists/*
           sudo -E apt-get -qq update
-          sudo -E apt-get -qq install -y build-essential clang flex bison g++ gawk gcc-multilib g++-multilib gettext git libncurses-dev libssl-dev python3-distutils rsync unzip zlib1g-dev file jq
+          
+          # 修复：编译基本组件环境。为了编译高版本内核新源码环境，还要额外升级 gcc-9 以便兼容高版本内核环境
+          sudo -E apt-get -qq install -y build-essential clang flex bison g++ gawk gcc-multilib g++-multilib gettext git libncurses5-dev libssl-dev python3-setuptools rsync subversion swig unzip zlib1g-dev libglib2.0-dev libelf-dev ecj fastjar java-propose-classpath libtool-bin
+          sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-9 100 --slave /usr/bin/g++ g++ /usr/bin/g++-9
+          
           sudo -E apt-get -qq autoremove --purge
           sudo -E apt-get -qq clean
           sudo timedatectl set-timezone "Asia/Shanghai"
@@ -37,28 +44,25 @@ jobs:
         run: |
           git clone -b $REPO_BRANCH $REPO_URL openwrt
           cd openwrt
-          # 按照官方指南执行 setup.py 配置平台
-          python3 setup.py -n mt7621 || true
+          # 如果你的源码里有 setup.py，请用下方命令行开始执行 * 填这里确定
+          python3 setup.py -n ax1800 || true
 
-      - name: 魔改硬件定义设备树 (DTS)
+      - name: 魔法硬件补丁修改 (DTS)
         run: |
           cd openwrt/openwrt-21.02/target/linux/ramips/dts/
-          # 强行解除并转换网络接口与GPIO布局
+          # 注意：基本配置好就可以自己（14或18/g）如果不齐自行修改
           sed -i 's/gpios = <\&gpio0 14/gpios = <\&gpio0 14/g' mt7621_glinet_gl-mt1300.dts
-          sed -i 's/phy-handle = <\&phy0/phy-handle = <\&ethphy4/g' mt7621_glinet_gl-mt1300.dts
+          sed -i 's/phy-handle = <&phy0>;/phy-handle = <&ethphy4>;/g' mt7621_glinet_gl-mt1300.dts
 
-      - name: 注入固件可选配方与强行解锁
+      - name: 注入固件插件包 (精确特定单 32MB 闪存)
         run: |
-          cd openwrt/openwrt-21.02/
+          cd openwrt/openwrt-21.02
+          # 先生成默认配置脚本
           make defconfig
-          # 强行扩展分区至 57344k 破除原厂 32M 限制，并注入 eMMC 核心驱动与魔改组件
-          sed -i 's/IMAGE_SIZE := 32448k/IMAGE_SIZE := 57344k/g' target/linux/ramips/image/mt7621.mk
-          echo "CONFIG_PACKAGE_kmod-mmc=y" >> .config
-          echo "CONFIG_PACKAGE_kmod-sdhci=y" >> .config
-          echo "CONFIG_PACKAGE_kmod-sdhci-mtk=y" >> .config
-          echo "CONFIG_PACKAGE_gl-cloud-component=y" >> .config
+          # 选好两个内核的编译与固件配置
+          echo "CONFIG_PACKAGE_luci-app-vlmcsd=y" >> .config
           echo "CONFIG_PACKAGE_luci-app-openvpn=y" >> .config
           echo "CONFIG_PACKAGE_luci-app-wireguard=y" >> .config
           echo "CONFIG_PACKAGE_luci-i18n-base-zh-cn=y" >> .config
           echo "CONFIG_TARGET_ramips_mt7621_DEVICE_glinet_gl-mt1300=y" >> .config
-          make defconfig
+          # 再次校验看配置是否符合完整性
