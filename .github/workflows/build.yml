@@ -10,9 +10,7 @@ on:
         default: 'false'
 
 env:
-  # 注意：如果是官方的分支 REPO_URL 请从 github.com 克隆，或者是你Fork或由第三方魔改的源码时请写其克隆URL
-  # 例如：https://github.com 或者填其他的作者仓库
-  REPO_URL: https://github.comgl-inet/gl-infra-builder.git
+  REPO_URL: https://github.com
   REPO_BRANCH: main
   CONFIG_FILE: .config
   DIY_SH: diy.sh
@@ -32,7 +30,6 @@ jobs:
           sudo rm -rf /etc/apt/sources.list.d/* /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/share/powershell /usr/share/swift /usr/local/.ghcup /var/lib/apt/lists/*
           sudo -E apt-get -qq update
           
-          # 修复：编译基本组件环境。为了编译高版本内核新源码环境，还要额外升级 gcc-9 以便兼容高版本内核环境
           sudo -E apt-get -qq install -y build-essential clang flex bison g++ gawk gcc-multilib g++-multilib gettext git libncurses5-dev libssl-dev python3-setuptools rsync subversion swig unzip zlib1g-dev libglib2.0-dev libelf-dev ecj fastjar java-propose-classpath libtool-bin
           sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-9 100 --slave /usr/bin/g++ g++ /usr/bin/g++-9
           
@@ -44,25 +41,20 @@ jobs:
         run: |
           git clone -b $REPO_BRANCH $REPO_URL openwrt
           cd openwrt
-          # 如果你的源码里有 setup.py，请用下方命令行开始执行 * 填这里确定
           python3 setup.py -n ax1800 || true
 
       - name: 魔法硬件补丁修改 (DTS)
         run: |
           cd openwrt/openwrt-21.02/target/linux/ramips/dts/
-          # 注意：基本配置好就可以自己（14或18/g）如果不齐自行修改
           sed -i 's/gpios = <\&gpio0 14/gpios = <\&gpio0 14/g' mt7621_glinet_gl-mt1300.dts
           sed -i 's/phy-handle = <&phy0>;/phy-handle = <&ethphy4>;/g' mt7621_glinet_gl-mt1300.dts
 
       - name: 注入固件插件包 (精确特定单 32MB 闪存)
         run: |
           cd openwrt/openwrt-21.02
-          # 先生成默认配置脚本
           make defconfig
-          # 选好两个内核的编译与固件配置
           echo "CONFIG_PACKAGE_luci-app-vlmcsd=y" >> .config
           echo "CONFIG_PACKAGE_luci-app-openvpn=y" >> .config
           echo "CONFIG_PACKAGE_luci-app-wireguard=y" >> .config
           echo "CONFIG_PACKAGE_luci-i18n-base-zh-cn=y" >> .config
           echo "CONFIG_TARGET_ramips_mt7621_DEVICE_glinet_gl-mt1300=y" >> .config
-          # 再次校验看配置是否符合完整性
