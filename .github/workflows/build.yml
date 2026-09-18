@@ -10,8 +10,6 @@ on:
         default: 'false'
 
 env:
-  REPO_URL: https://github.com
-  REPO_BRANCH: main
   CONFIG_FILE: .config
   DIY_SH: diy.sh
 
@@ -39,7 +37,7 @@ jobs:
 
       - name: Clone source code
         run: |
-          git clone -b $REPO_BRANCH $REPO_URL openwrt
+          git clone -b main https://github.com openwrt
           cd openwrt
           python3 setup.py -n ax1800 || true
 
